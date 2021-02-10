@@ -1,10 +1,10 @@
 from setuptools import find_packages, setup
 
 setup(
-    name='jacket',
+    name='selenium_js2py',
     version='0.1.0',
     packages=find_packages(),
-    url='https://github.com/junk-io/jacket',
+    url='https://github.com/junk-io/selenium-js2py',
     author='junki',
     description='A Selenium-based tool for wrapping and interacting with JavaScript objects',
     license="MIT",

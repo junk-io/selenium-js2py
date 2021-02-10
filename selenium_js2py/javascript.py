@@ -6,14 +6,12 @@ from typing import Iterable, Union
 from selenium.webdriver.remote.webdriver import WebDriver as Driver
 from selenium.webdriver.remote.webelement import WebElement as Element
 
-from ._algae import findargs, noneoremptystr, setupargs
+from ._algae import enclosedby, findargs, noneoremptystr, setupargs
 
 __all__ = [
     "InvokeOption",
     "JavaScriptExecutor",
-    "JavaScriptObject",
-    "DOMElement",
-    "Object"
+    "JavaScriptObject"
 ]
 
 class InvalidJavaScriptAttribute(Exception):
@@ -244,11 +242,18 @@ class JavaScriptObject:
         for key, value in self._invopts.items():
             setattr(self, key, value)
         
-        if isinstance(self._obj, str) and not self.strobj:
-            if objstr := noneoremptystr(self._obj):
-                self._obj = objstr
+        if isinstance(obj, str):
+            if obj.isidentifier():
+                if not self.strobj:
+                    if obj := noneoremptystr(obj):
+                        self._obj = obj
+                    else:
+                        self._obj = None
             else:
-                self._obj = None
+                if enclosedby(obj, '"') or enclosedby(obj, "'"):
+                    self._obj = obj[1:-1]
+                    
+                self.strobj = True
     
     def __contains__(self, attr):
         return noneoremptystr(attr) in self._attrs
@@ -267,7 +272,7 @@ class JavaScriptObject:
         if name in self._attrs:
             return self._attrs[name]
         else:
-            return self.invoke(f"""["{name}"]""", None, *execargs)
+            return self.invoke(name, *execargs)
     
     def __iter__(self):
         for prop in self.properties():
@@ -476,9 +481,10 @@ class JavaScriptObject:
                 res = f(attrargs)
         elif attrargs is not None:
             raise InvalidJavaScriptAttribute(f"No function named `{name}`.")
-        else:
-            prop = self.wrapproperty(name, *execargs, as_function=True)
+        elif prop := self.wrapproperty(name, *execargs, as_function=True):
             res = prop()
+        else:
+            return None
         
         if self._getopt(InvokeOption.cacheattr, InvokeOption.cacheattrs, **invopts):
             attr = None
@@ -520,7 +526,7 @@ class JavaScriptObject:
             InvokeOption.overwrite: True
         }
         
-        return {attr: self.invoke(attr, None, *execargs, **invopts) for attr in attrs}
+        return {attr: self.invoke(attr, *execargs, **invopts) for attr in attrs}
     
     def populateall(self, *execargs, **invopts: bool):
         """Populates a dictionary with the attributes of the object and its prototype(s)
@@ -547,7 +553,7 @@ class JavaScriptObject:
             InvokeOption.overwrite: True
         }
         
-        return {attr: self.invoke(attr, None, *execargs, **invopts) for attr in attrs}
+        return {attr: self.invoke(attr, *execargs, **invopts) for attr in attrs}
     
     def tryinvoke(self,
                   name: str,
@@ -572,7 +578,7 @@ class JavaScriptObject:
                 or `None`
         """
         try:
-            return self.invoke(name, attrargs, *execargs, **invopts)
+            return self.invoke(name, *execargs, attrargs=attrargs, **invopts)
         except InvalidJavaScriptAttribute:
             pass
     
@@ -690,7 +696,7 @@ class JavaScriptObject:
                 
                 if passobj:
                     lamb = f"""lambda jsexec, obj, execargs, {namesstr}: jsexec.execute_script(
-                    "return {jsdef}({argsstr})", obj, *execargs, {namesstr}) """
+                    \"\"\"return {jsdef}({argsstr})\"\"\", obj, *execargs, {namesstr}) """
                     
                     return partial(
                         eval(lamb),
@@ -699,7 +705,7 @@ class JavaScriptObject:
                         self._execargs + execargs)
                 else:
                     lamb = f"""lambda jsexec, execargs, {namesstr}: jsexec.execute_script(
-                    "return {jsdef}({argsstr})", *execargs, {namesstr})"""
+                    \"\"\"return {jsdef}({argsstr})\"\"\", *execargs, {namesstr})"""
                     
                     return partial(eval(lamb), self._jsexec, self._execargs + execargs)
     
@@ -793,21 +799,3 @@ class JavaScriptObject:
 
     def _globalinvopts(self):
         return {glbl: getattr(self, glbl) for glbl in InvokeOption.globalsonly()}
-    
-class DOMElement(JavaScriptObject):
-    
-    def __init__(self, element: Element, jsexec: JSExecType, *execargs, **invopts):
-        super().__init__(element, jsexec, *execargs, **invopts)
-    
-    def __getattr__(self, name):
-        if hasattr(self._obj, name):
-            return getattr(self._obj, name)
-
-
-class Object:
-    
-    def __init__(self, jsexec: JSExecType, *execargs, **invopts):
-        super().__init__("Object", jsexec, *execargs, **invopts)
-    
-    def __getattr__(self, name):
-        return self.wrapfunction(name)

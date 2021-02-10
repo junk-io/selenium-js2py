@@ -1,5 +1,7 @@
 import re
 
+def enclosedby(string, pattern):
+    return string.startswith(pattern) and string.endswith(pattern)
 
 def noneoremptystr(string): return string.strip() if string and string.strip() else ""
 
