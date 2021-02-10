@@ -242,16 +242,13 @@ class JavaScriptObject:
             setattr(self, key, value)
         
         if isinstance(obj, str) and not self.strobj:
-            if enclosedby(obj, '"') or enclosedby("'"):
+            if enclosedby(obj, '"') or enclosedby(obj, "'"):
                 self._obj = obj[1:-1]
                 self.strobj = True
             elif obj := noneoremptystr(obj):
                 self._obj = obj
             else:
                 self._obj = None
-            
-                
-                
                 self.strobj = True
     
     def __contains__(self, attr):
