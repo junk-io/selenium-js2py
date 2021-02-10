@@ -241,16 +241,16 @@ class JavaScriptObject:
         for key, value in self._invopts.items():
             setattr(self, key, value)
         
-        if isinstance(obj, str):
-            if obj.isidentifier():
-                if not self.strobj:
-                    if obj := noneoremptystr(obj):
-                        self._obj = obj
-                    else:
-                        self._obj = None
+        if isinstance(obj, str) and not self.strobj:
+            if enclosedby(obj, '"') or enclosedby("'"):
+                self._obj = obj[1:-1]
+                self.strobj = True
+            elif obj := noneoremptystr(obj):
+                self._obj = obj
             else:
-                if enclosedby(obj, '"') or enclosedby(obj, "'"):
-                    self._obj = obj[1:-1]
+                self._obj = None
+            
+                
                 
                 self.strobj = True
     

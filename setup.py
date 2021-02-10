@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='selenium_js2py',
-    version='0.1.0',
+    version='0.1.1',
     packages=find_packages(),
     url='https://github.com/junk-io/selenium-js2py',
     author='junki',
