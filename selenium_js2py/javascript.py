@@ -4,7 +4,6 @@ from functools import partial
 from typing import Iterable, Union
 
 from selenium.webdriver.remote.webdriver import WebDriver as Driver
-from selenium.webdriver.remote.webelement import WebElement as Element
 
 from ._algae import enclosedby, findargs, noneoremptystr, setupargs
 
@@ -14,11 +13,14 @@ __all__ = [
     "JavaScriptObject"
 ]
 
+
 class InvalidJavaScriptAttribute(Exception):
     pass
 
+
 class JacketException(Exception):
     pass
+
 
 class JavaScriptExecutor(ABC):
     """Abstract class for objects that execute javascript."""
@@ -100,7 +102,7 @@ class InvokeOption:
             InvokeOption.cacheprops: True,
             InvokeOption.overwrite : bool(overwrite)
         }
-
+    
     @staticmethod
     def globalsonly():
         return [
@@ -174,8 +176,8 @@ class JavaScriptObject:
                 * `strobj = True`, passed as argument
                 * `strobj = False`, used as name of argument
                 
-        The object optionally supports a global caching scheme
-        through optional keywords passed into the constructor
+        The object optionally supports a global caching scheme through optional
+        keywords passed into the constructor
         
             * `cacheattrs`
             
@@ -191,18 +193,15 @@ class JavaScriptObject:
                 
             * `overwrite`
             
-                * Whether to overwrite attribute if previously
-                        cached
+                * Whether to overwrite attribute if previously cached
                     
-        When caching is enabled, `jsobject[attr]` returns the
-        cached function of the attribute if it exists,
-        if it does not exist, the attribute must
+        When caching is enabled, `jsobject[attr]` returns the cached function of
+        the attribute if it exists, if it does not exist, the attribute must
         be explicitly invoked via `jsobj.invoke`.
         
         
-        Note, even if caching is disabled locally, invoke
-        accepts analagous keywords for caching
-        attributes individually.
+        Note, even if caching is disabled locally, invoke accepts analagous keywords
+        for caching attributes individually.
             
             * `cacheattr`
             * `ifprop`
@@ -252,7 +251,7 @@ class JavaScriptObject:
             else:
                 if enclosedby(obj, '"') or enclosedby(obj, "'"):
                     self._obj = obj[1:-1]
-                    
+                
                 self.strobj = True
     
     def __contains__(self, attr):
@@ -267,8 +266,6 @@ class JavaScriptObject:
         return self.invoke(name)
     
     def __getitem__(self, name: str, *execargs):
-        name = noneoremptystr(name)
-        
         if name in self._attrs:
             return self._attrs[name]
         else:
@@ -796,6 +793,6 @@ class JavaScriptObject:
         lopt = opts.get(lcl)
         
         return gopt if lopt is None else lopt
-
+    
     def _globalinvopts(self):
         return {glbl: getattr(self, glbl) for glbl in InvokeOption.globalsonly()}
