@@ -901,3 +901,106 @@ class JavaScriptObjectFactory:
 
     def _globalinvopts(self):
         return {glbl: getattr(self, glbl) for glbl in InvokeOption.globalsonly()}
+
+
+class JavaScriptResponse(JavaScriptObject):
+    """A wrapper for a JavaScript object
+
+    Responses can be initialized with an exception or message signifying
+    a failed response. Any attempts at accessing attributes other than
+    `__bool__` of the response object will raise the exception.
+
+    The exception for `__bool__` is to allow conditional handling of
+    responses, i.e. `if response`vs.`if response.exception is None`.
+    """
+    
+    def __init__(self,
+                 response,
+                 jsexec: JavaScriptExecutor = None,
+                 exception=None, **invopts):
+        
+        if exception:
+            response = _res = None
+            _exc = JacketException(exception) if isinstance(exception, str) else exception
+        else:
+            _res, _exc = JavaScriptObject(response, jsexec, **invopts), None
+        
+        self._raw = response
+        self._exc = _exc
+        
+        if isinstance(response, str):
+            if not (enclosedby('"', response) or enclosedby("'", response)):
+                if response.isidentifier():
+                    strobj = jsexec.execute_script(f"""return {response}""") is None
+                else:
+                    strobj = True
+            else:
+                strobj = False
+        else:
+            strobj = False
+            
+        super().__init__(response, jsexec, **{**invopts, InvokeOption.strobj: strobj})
+        
+    def __bool__(self):
+        return self._exc is None
+    
+    def __getattribute__(self, item):
+        if ((exc := object.__getattribute__(self, "_exc")) and
+                item != "__bool__"):
+            raise exc
+        
+        return object.__getattribute__(self, item)
+    
+    def __repr__(self):
+        return f"""{JavaScriptResponse.__name__}<{self._exc if self._exc else self._raw}>"""
+    
+    @property
+    def exception(self):
+        """The exception causing the failed response"""
+        return self._exc
+    
+    @property
+    def raw_response(self):
+        """The object used to intialize the response
+
+
+        `raw_response` vs. `response`:
+
+        * `raw_response is Element`, `response is JQueryElement`
+
+        * `raw_response is Iterable[Element]`, `response is List[JQueryElement]`
+        """
+        return self._raw
+    
+    @property
+    def response(self):
+        """The wrapped element or list of elements
+
+        `raw_response` vs. `response`:
+
+        * `raw_response is Element`, `response is JQueryElement`
+
+        * `raw_response is Iterable[Element]`, `response is List[JQueryElement]`
+        """
+        return self._r
+    
+    @property
+    def success(self):
+        """Whether an exception was raised during the query"""
+        return self._exc is None
+    
+    def attr(self, name: str, value=None):
+        """An implementation of $(query).attr
+
+                Parameters:
+                    name: Name of the attribute
+                    value: The optional new value of the attribute
+
+                Returns:
+                    The value of the attribute if `value` is `None`
+        """
+        args0, args1 = "arguments[0]", "arguments[1]"
+        if value is None:
+            return self._exec(f"""$({args0}).attr("{name}")""", False)
+        else:
+            self._exec(f"""$({args0}).attr("{name}", {args1})""", False, value)
