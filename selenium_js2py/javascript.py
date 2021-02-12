@@ -1,6 +1,6 @@
 import textwrap
 from abc import ABC, abstractmethod
-from functools import partial
+from functools import partial, wraps
 from typing import Iterable, Union
 
 from selenium.webdriver.remote.webdriver import WebDriver as Driver
@@ -40,6 +40,45 @@ class JavaScriptExecutor(ABC):
 
 
 JSExecType = Union[JavaScriptExecutor, Driver]
+
+def _configureglobalopts(**invopts):
+    return {
+        InvokeOption.cacheattrs: invopts.get(InvokeOption.cacheattrs, False),
+        InvokeOption.cacheprops: invopts.get(InvokeOption.cacheprops, True),
+        InvokeOption.cachefuncs: invopts.get(InvokeOption.cachefuncs, True),
+        InvokeOption.overwrite : invopts.get(InvokeOption.overwrite, True),
+        InvokeOption.strobj    : invopts.get(InvokeOption.strobj, False),
+    }
+
+
+def _resolveargnames(argnames, arity):
+    if isinstance(argnames, str):
+        if argname := noneoremptystr(argnames):
+            names = [argname]
+        else:
+            names = []
+    else:
+        names = list(argnames)
+    
+    if len(names) >= arity:
+        names = names[:arity]
+    else:
+        n = len(names)
+        names += [f"arg{i + n}" for i in range(arity - n)]
+        
+    return names
+def _resolveargs(*execargs):
+    return tuple(arg() if callable(arg) else arg for arg in execargs)
+
+
+def _resolveexecargs(resolver, arity=0):
+    def decorator(method):
+        @wraps(method)
+        def wrapper(*args, **kwargs):
+            execargs = resolver(*args[arity:])
+            return method(*args[:arity], *execargs, **kwargs)
+        return wrapper
+    return decorator
 
 
 class InvokeOption:
@@ -230,15 +269,9 @@ class JavaScriptObject:
         self._execargs = execargs
         self._attrs = {}
         
-        self._invopts = {
-            InvokeOption.cacheattrs: invopts.get(InvokeOption.cacheattrs, False),
-            InvokeOption.cacheprops: invopts.get(InvokeOption.cacheprops, True),
-            InvokeOption.cachefuncs: invopts.get(InvokeOption.cachefuncs, True),
-            InvokeOption.overwrite : invopts.get(InvokeOption.overwrite, True),
-            InvokeOption.strobj    : invopts.get(InvokeOption.strobj, False),
-        }
+        invopts = _configureglobalopts(**invopts)
         
-        for key, value in self._invopts.items():
+        for key, value in invopts.items():
             setattr(self, key, value)
         
         if isinstance(obj, str) and not self.strobj:
@@ -304,7 +337,9 @@ class JavaScriptObject:
         args = setupargs(lambda i: i, 0, len(ctorargs)) if ctorargs else ()
         
         if args:
-            jsexec.execute_script(f"""{name} = new {obj}({",".join(args)})""", *ctorargs)
+            jsexec.execute_script(
+                f"""{name} = new {obj}({",".join(args)})""",
+                *_resolveargs(*ctorargs))
         else:
             jsexec.execute_script(f"""{name} = new {obj}()""")
         
@@ -332,7 +367,8 @@ class JavaScriptObject:
     def object(self):
         """The wrapped object"""
         return self._obj
-    
+
+    @_resolveexecargs(_resolveargs)
     def allattributes(self, *execargs):
         """All functions and properties of the object and its prototype(s)
         
@@ -354,7 +390,8 @@ class JavaScriptObject:
         """).strip("\n")
         
         return self._exec(stmt, passobj, *execargs)
-    
+
+    @_resolveexecargs(_resolveargs)
     def allfunctions(self, *execargs):
         """All functions of the object and its prototype(s)
 
@@ -376,7 +413,8 @@ class JavaScriptObject:
         """).strip("\n")
         
         return self._exec(stmt, passobj, *execargs)
-    
+
+    @_resolveexecargs(_resolveargs)
     def allproperties(self, *execargs):
         """All properties of the object and its prototype(s)
 
@@ -398,7 +436,8 @@ class JavaScriptObject:
         """).strip("\n")
         
         return self._exec(stmt, passobj, *execargs)
-    
+
+    @_resolveexecargs(_resolveargs)
     def attributes(self, *execargs):
         """All functions and properties of the object
 
@@ -414,6 +453,7 @@ class JavaScriptObject:
         """Clears the attribute cache"""
         self._attrs.clear()
     
+    @_resolveexecargs(_resolveargs)
     def functions(self, *execargs):
         """All functions of the object
 
@@ -426,18 +466,17 @@ class JavaScriptObject:
         
         return self._exec(stmt, passobj, *execargs)
     
-    def properties(self, *execargs):
-        """All properties of the object
+    def get(self, name: str):
+        """Gets the value of a global variable
 
         Parameters:
-            execargs: Any extra arguments required by the `JavaScriptExecutor`
+            name: The name of the variable
         """
-        jsdef, passobj = self._define()
-        stmt = f"""Object.getOwnPropertyNames({jsdef}).filter(p => typeof({jsdef})[p] !==
-        "function")"""
+        if not ((name := noneoremptystr(name)) or name.isidentifier()):
+            raise JacketException("Expected valid identifier.")
         
-        return self._exec(stmt, passobj, *execargs)
-    
+        return self._jsexec.execute_script(f"return {name}")
+        
     def invoke(self,
                name: str = None,
                *execargs,
@@ -548,7 +587,35 @@ class JavaScriptObject:
         }
         
         return {attr: self.invoke(attr, *execargs, **invopts) for attr in attrs}
+
+    @_resolveexecargs(_resolveargs)
+    def properties(self, *execargs):
+        """All properties of the object
+
+        Parameters:
+            execargs: Any extra arguments required by the `JavaScriptExecutor`
+        """
+        jsdef, passobj = self._define()
+        stmt = f"""Object.getOwnPropertyNames({jsdef}).filter(p => typeof({jsdef})[p] !==
+            "function")"""
     
+        return self._exec(stmt, passobj, *execargs)
+
+    def run(self, *execargs):
+        return self.invoke(None, *execargs)
+    
+    def set(self, name: str, expr):
+        """Sets the value of a global variable
+        
+        Parameters:
+            name: The name of the variable
+            expr: The value of the variable
+        """
+        if not ((name := noneoremptystr(name)) or name.isidentifier()):
+            raise JacketException("Expected valid identifier.")
+        
+        self._jsexec.execute_script(f"{name} = arguments[0]", expr)
+        
     def tryinvoke(self,
                   name: str,
                   attrargs: tuple = None,
@@ -626,6 +693,7 @@ class JavaScriptObject:
         
         return {**wprops, **wfuncs}
     
+    @_resolveexecargs(_resolveargs, 1)
     def wrapfunction(self,
                      name: str,
                      *execargs,
@@ -651,6 +719,7 @@ class JavaScriptObject:
         jsdef, passobj = self._define(name)
         stmt = f"""typeof({jsdef})"""
         res_type = self._exec(stmt, passobj, *execargs)
+        args = (_resolveargs(*self._execargs), *execargs)
         
         if res_type == "function":
             arity = self._exec(f"""{jsdef}.length""", passobj, *execargs)
@@ -661,25 +730,12 @@ class JavaScriptObject:
                     return lambda: self._jsexec.execute_script(
                         script,
                         self._obj,
-                        *self._execargs,
-                        *execargs)
+                        *args)
                 else:
-                    return lambda: self._jsexec.execute_script(script, *self._execargs, *execargs)
+                    return lambda: self._jsexec.execute_script(script, *args)
             else:
                 if argnames:
-                    if isinstance(argnames, str):
-                        if argname := noneoremptystr(argnames):
-                            names = [argname]
-                        else:
-                            names = []
-                    else:
-                        names = list(argnames)
-                    
-                    if len(names) >= arity:
-                        names = names[:arity]
-                    else:
-                        n = len(names)
-                        names += [f"arg{i + n}" for i in range(arity - n)]
+                    names = _resolveargnames(argnames, arity)
                 else:
                     names = [f"arg{i}" for i in range(arity)]
                 
@@ -696,13 +752,14 @@ class JavaScriptObject:
                         eval(lamb),
                         self._jsexec,
                         self._obj,
-                        self._execargs + execargs)
+                        args)
                 else:
                     lamb = f"""lambda jsexec, execargs, {namesstr}: jsexec.execute_script(
                     \"\"\"return {jsdef}({argsstr})\"\"\", *execargs, {namesstr})"""
                     
-                    return partial(eval(lamb), self._jsexec, self._execargs + execargs)
+                    return partial(eval(lamb), self._jsexec, args)
     
+    @_resolveexecargs(_resolveargs, 1)
     def wrapproperty(self,
                      name: str,
                      *execargs, as_function: bool = False):
@@ -730,15 +787,19 @@ class JavaScriptObject:
         
         if res_type not in ("function", "undefined"):
             stmt = f"""return {jsdef}"""
+            execargs = (_resolveargs(*self._execargs), *execargs)
+            
             if passobj:
                 lamb = lambda jsexec, obj, *args: jsexec.execute_script(f"{stmt}", obj, *args)
-                f = partial(lamb, self._jsexec, self._obj, *self._execargs, *execargs)
+                f = partial(lamb, self._jsexec, self._obj, *execargs)
+                
                 return f if as_function else property(fget=f)
             else:
                 lamb = lambda jsexec, *args: jsexec.execute_script(f"""{stmt}""", *args)
-                f = partial(lamb, self._jsexec, *self._execargs, *execargs)
+                f = partial(lamb, self._jsexec, *execargs)
+                
                 return f if as_function else property(fget=f)
-    
+
     def _define(self, name=None):
         def stringify(oname, pobj):
             if not name:
@@ -773,16 +834,15 @@ class JavaScriptObject:
         return obj
     
     def _exec(self, stmt, passobj, *args):
+        args = (_resolveargs(*self._execargs), *args)
         if passobj:
             return self._jsexec.execute_script(
                 f"""return {stmt}""",
                 self._obj,
-                *self._execargs,
                 *args)
         else:
             return self._jsexec.execute_script(
                 f"""return {stmt}""",
-                *self._execargs,
                 *args)
     
     def _getopt(self, lcl, glbl, **opts):
@@ -791,5 +851,53 @@ class JavaScriptObject:
         
         return gopt if lopt is None else lopt
     
+    def _globalinvopts(self):
+        return {glbl: getattr(self, glbl) for glbl in InvokeOption.globalsonly()}
+
+
+class JavaScriptObjectFactory:
+    """A factory for creating JavaScript objects using a set executor"""
+    
+    def __init__(self, jsexec: JSExecType, *execargs, **invopts):
+        self._jsexec = jsexec
+        self._execargs = execargs
+
+        invopts = _configureglobalopts(invopts)
+
+        for key, value in invopts.items():
+            setattr(self, key, value)
+            
+    def init(self, obj, *execargs, **invopts):
+        """Wraps the object and sets up global caching options
+        
+        Parameters:
+            obj: The object to be wrapped
+            
+            execargs: Arguments required by the object
+                if it is a string with placeholder arguments
+                
+            invopts: Global invoke options:
+                {`cacheattrs`, `cachefuncs`, `cacheprops`, `overwrite`, `strobj`}
+        """
+        opts = {**self._globalinvopts(), **_configureglobalopts(**invopts)}
+        args = (*self._execargs, *execargs)
+        return JavaScriptObject(obj, self._jsexec, *args, **opts)
+    
+    def new(self, obj, name, *ctorargs, **invopts):
+        """Creates a new JavaScript object and stores it in the global space of the executor
+
+        Parameters:
+            obj: The name of the JavaScript object
+
+            name: The name of the variable to store the object
+
+            ctorargs: Arguments to be given to the constructor of the object
+
+            invopts: Global invoke options:
+                {`cacheattrs`, `cachefuncs`, `cacheprops`, `overwrite`}
+        """
+        opts = {**self._globalinvopts(), **_configureglobalopts(**invopts)}
+        return JavaScriptObject.new(obj, name, self._jsexec, *ctorargs, **opts)
+
     def _globalinvopts(self):
         return {glbl: getattr(self, glbl) for glbl in InvokeOption.globalsonly()}
