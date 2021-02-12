@@ -161,7 +161,7 @@ class JQueryResponse(JavaScriptObject):
         return object.__getattribute__(self, item)
     
     def __repr__(self):
-        return f"""{JQueryResponse.__name__}<{self.definition_root}>"""
+        return f"""{JQueryResponse.__name__}<{self._exc if self._exc else self._raw}>"""
     
     @property
     def exception(self):
