@@ -948,8 +948,13 @@ class JavaScriptResponse(JavaScriptObject):
         if ((exc := object.__getattribute__(self, "_exc")) and
                 item != "__bool__"):
             raise exc
-        
-        return object.__getattribute__(self, item)
+        else:
+            try:
+                res = object.__getattribute__(self, item)
+            except Exception as exc:
+                return JavaScriptResponse(None, self._jsexec, exc)
+            else:
+                return JavaScriptResponse(res, self._jsexec, **self._globalinvopts())
     
     def __repr__(self):
         return f"""{JavaScriptResponse.__name__}<{self._exc if self._exc else self._raw}>"""
@@ -988,19 +993,3 @@ class JavaScriptResponse(JavaScriptObject):
     def success(self):
         """Whether an exception was raised during the query"""
         return self._exc is None
-    
-    def attr(self, name: str, value=None):
-        """An implementation of $(query).attr
-
-                Parameters:
-                    name: Name of the attribute
-                    value: The optional new value of the attribute
-
-                Returns:
-                    The value of the attribute if `value` is `None`
-        """
-        args0, args1 = "arguments[0]", "arguments[1]"
-        if value is None:
-            return self._exec(f"""$({args0}).attr("{name}")""", False)
-        else:
-            self._exec(f"""$({args0}).attr("{name}", {args1})""", False, value)
