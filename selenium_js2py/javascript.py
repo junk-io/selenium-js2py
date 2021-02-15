@@ -10,7 +10,9 @@ from ._algae import enclosedby, findargs, noneoremptystr, setupargs
 __all__ = [
     "InvokeOption",
     "JavaScriptExecutor",
-    "JavaScriptObject"
+    "JavaScriptObject",
+    "JavaScriptObjectFactory",
+    "JavaScriptResponse"
 ]
 
 
@@ -950,11 +952,9 @@ class JavaScriptResponse(JavaScriptObject):
             raise exc
         else:
             try:
-                res = object.__getattribute__(self, item)
+                return object.__getattribute__(self, item)
             except Exception as exc:
                 return JavaScriptResponse(None, self._jsexec, exc)
-            else:
-                return JavaScriptResponse(res, self._jsexec, **self._globalinvopts())
     
     def __repr__(self):
         return f"""{JavaScriptResponse.__name__}<{self._exc if self._exc else self._raw}>"""
