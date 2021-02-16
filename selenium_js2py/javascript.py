@@ -5,7 +5,7 @@ from typing import Iterable, Union
 
 from selenium.webdriver.remote.webdriver import WebDriver as Driver
 
-from ._algae import enclosedby, findargs, noneoremptystr, setupargs
+from ._algae import enclosedby, findargs, jio_repr, noneoremptystr, setupargs
 
 __all__ = [
     "InvokeOption",
@@ -20,7 +20,7 @@ class InvalidJavaScriptAttribute(Exception):
     pass
 
 
-class JacketException(Exception):
+class JS2PyException(Exception):
     pass
 
 
@@ -42,6 +42,7 @@ class JavaScriptExecutor(ABC):
 
 
 JSExecType = Union[JavaScriptExecutor, Driver]
+
 
 def _configureglobalopts(**invopts):
     return {
@@ -67,8 +68,10 @@ def _resolveargnames(argnames, arity):
     else:
         n = len(names)
         names += [f"arg{i + n}" for i in range(arity - n)]
-        
+    
     return names
+
+
 def _resolveargs(*execargs):
     return tuple(arg() if callable(arg) else arg for arg in execargs)
 
@@ -79,7 +82,9 @@ def _resolveexecargs(resolver, arity=0):
         def wrapper(*args, **kwargs):
             execargs = resolver(*args[arity:])
             return method(*args[:arity], *execargs, **kwargs)
+        
         return wrapper
+    
     return decorator
 
 
@@ -290,9 +295,9 @@ class JavaScriptObject:
         return noneoremptystr(attr) in self._attrs
     
     def __getattr__(self, name):
-        if name in self._attrs:
+        if (name := noneoremptystr(name)) in self._attrs:
             return self._attrs[name]
-        elif not name.isidentifier() or (name.startswith("__") and name.endswith("__")):
+        elif not name.isidentifier():
             raise InvalidJavaScriptAttribute(f"{name} must be invoked via `invoke` or ['{name}'].")
         
         return self.invoke(name)
@@ -308,7 +313,7 @@ class JavaScriptObject:
             yield prop
     
     def __repr__(self):
-        return f"""{JavaScriptObject.__name__}<{self.definition_root}>"""
+        return jio_repr(JavaScriptObject, self.definition_root)
     
     @classmethod
     def new(cls,
@@ -369,7 +374,7 @@ class JavaScriptObject:
     def object(self):
         """The wrapped object"""
         return self._obj
-
+    
     @_resolveexecargs(_resolveargs)
     def allattributes(self, *execargs):
         """All functions and properties of the object and its prototype(s)
@@ -392,7 +397,7 @@ class JavaScriptObject:
         """).strip("\n")
         
         return self._exec(stmt, passobj, *execargs)
-
+    
     @_resolveexecargs(_resolveargs)
     def allfunctions(self, *execargs):
         """All functions of the object and its prototype(s)
@@ -415,7 +420,7 @@ class JavaScriptObject:
         """).strip("\n")
         
         return self._exec(stmt, passobj, *execargs)
-
+    
     @_resolveexecargs(_resolveargs)
     def allproperties(self, *execargs):
         """All properties of the object and its prototype(s)
@@ -438,7 +443,7 @@ class JavaScriptObject:
         """).strip("\n")
         
         return self._exec(stmt, passobj, *execargs)
-
+    
     @_resolveexecargs(_resolveargs)
     def attributes(self, *execargs):
         """All functions and properties of the object
@@ -475,10 +480,10 @@ class JavaScriptObject:
             name: The name of the variable
         """
         if not ((name := noneoremptystr(name)) or name.isidentifier()):
-            raise JacketException("Expected valid identifier.")
+            raise JS2PyException("Expected valid identifier.")
         
         return self._jsexec.execute_script(f"return {name}")
-        
+    
     def invoke(self,
                name: str = None,
                *execargs,
@@ -589,7 +594,7 @@ class JavaScriptObject:
         }
         
         return {attr: self.invoke(attr, *execargs, **invopts) for attr in attrs}
-
+    
     @_resolveexecargs(_resolveargs)
     def properties(self, *execargs):
         """All properties of the object
@@ -600,9 +605,9 @@ class JavaScriptObject:
         jsdef, passobj = self._define()
         stmt = f"""Object.getOwnPropertyNames({jsdef}).filter(p => typeof({jsdef})[p] !==
             "function")"""
-    
+        
         return self._exec(stmt, passobj, *execargs)
-
+    
     def run(self, *execargs):
         return self.invoke(None, *execargs)
     
@@ -614,10 +619,10 @@ class JavaScriptObject:
             expr: The value of the variable
         """
         if not ((name := noneoremptystr(name)) or name.isidentifier()):
-            raise JacketException("Expected valid identifier.")
+            raise JS2PyException("Expected valid identifier.")
         
         self._jsexec.execute_script(f"{name} = arguments[0]", expr)
-        
+    
     def tryinvoke(self,
                   name: str,
                   attrargs: tuple = None,
@@ -801,7 +806,7 @@ class JavaScriptObject:
                 f = partial(lamb, self._jsexec, *execargs)
                 
                 return f if as_function else property(fget=f)
-
+    
     def _define(self, name=None):
         def stringify(oname, pobj):
             if not name:
@@ -863,12 +868,15 @@ class JavaScriptObjectFactory:
     def __init__(self, jsexec: JSExecType, *execargs, **invopts):
         self._jsexec = jsexec
         self._execargs = execargs
-
-        invopts = _configureglobalopts(invopts)
-
+        
+        invopts = _configureglobalopts(**invopts)
+        
         for key, value in invopts.items():
             setattr(self, key, value)
             
+    def __repr__(self):
+        return jio_repr(JavaScriptObjectFactory, self._jsexec)
+    
     def init(self, obj, *execargs, **invopts):
         """Wraps the object and sets up global caching options
         
@@ -900,7 +908,7 @@ class JavaScriptObjectFactory:
         """
         opts = {**self._globalinvopts(), **_configureglobalopts(**invopts)}
         return JavaScriptObject.new(obj, name, self._jsexec, *ctorargs, **opts)
-
+    
     def _globalinvopts(self):
         return {glbl: getattr(self, glbl) for glbl in InvokeOption.globalsonly()}
 
@@ -918,12 +926,12 @@ class JavaScriptResponse(JavaScriptObject):
     
     def __init__(self,
                  response,
-                 jsexec: JavaScriptExecutor = None,
+                 jsexec: JSExecType = None,
                  exception=None, **invopts):
         
         if exception:
             response = _res = None
-            _exc = JacketException(exception) if isinstance(exception, str) else exception
+            _exc = JS2PyException(exception) if isinstance(exception, str) else exception
         else:
             _res, _exc = JavaScriptObject(response, jsexec, **invopts), None
         
@@ -940,24 +948,14 @@ class JavaScriptResponse(JavaScriptObject):
                 strobj = False
         else:
             strobj = False
-            
-        super().__init__(response, jsexec, **{**invopts, InvokeOption.strobj: strobj})
         
+        super().__init__(response, jsexec, **{**invopts, InvokeOption.strobj: strobj})
+    
     def __bool__(self):
         return self._exc is None
     
-    def __getattribute__(self, item):
-        if ((exc := object.__getattribute__(self, "_exc")) and
-                item != "__bool__"):
-            raise exc
-        else:
-            try:
-                return object.__getattribute__(self, item)
-            except Exception as exc:
-                return JavaScriptResponse(None, self._jsexec, exc)
-    
     def __repr__(self):
-        return f"""{JavaScriptResponse.__name__}<{self._exc if self._exc else self._raw}>"""
+        return jio_repr(JavaScriptResponse, self._exc if self._exc else self._raw)
     
     @property
     def exception(self):

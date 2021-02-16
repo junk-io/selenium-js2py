@@ -6,8 +6,8 @@ from selenium.webdriver.remote.webelement import WebElement as Element
 
 from . import InvokeOption
 from . import JavaScriptExecutor, JavaScriptObject
-from ._algae import noneoremptystr
-from .javascript import JacketException
+from ._algae import jio_repr, noneoremptystr
+from .javascript import JSExecType, JS2PyException
 
 __all__ = [
     "JQueryElement",
@@ -19,7 +19,7 @@ __all__ = [
 class JQueryElement(JavaScriptObject):
     """Wraps a `WebElement` that is treated as an argument to the `jquery` (`$`) function"""
     
-    def __init__(self, element: Element, jsexec: JavaScriptExecutor = None, **invopts):
+    def __init__(self, element: Element, jsexec: JSExecType = None, **invopts):
         self._element = element
         jsexec = jsexec or element._parent
         super().__init__(
@@ -27,6 +27,9 @@ class JQueryElement(JavaScriptObject):
             jsexec,
             element,
             **{**invopts, InvokeOption.strobj: False})
+        
+    def __repr__(self):
+        return jio_repr(JQueryElement, f"WebElement: {self._element.id}")
     
     @property
     def element(self):
@@ -103,13 +106,12 @@ class JQueryResponse(JavaScriptObject):
     
     def __init__(self,
                  response: Union[Element, Iterable[Element]],
-                 jsexec: JavaScriptExecutor = None,
+                 jsexec: JSExecType = None,
                  exception=None, **invopts):
         
         if exception:
             _jsexec, _res = jsexec, []
-            _exc = JacketException(exception) if isinstance(exception,
-                                                            str) else exception
+            _exc = JS2PyException(exception) if isinstance(exception, str) else exception
         else:
             if isinstance(response, Element):
                 _jsexec = jsexec or response.parent
@@ -161,7 +163,7 @@ class JQueryResponse(JavaScriptObject):
         return object.__getattribute__(self, item)
     
     def __repr__(self):
-        return f"""{JQueryResponse.__name__}<{self._exc if self._exc else self._raw}>"""
+        return jio_repr(JQueryResponse, self._exc if self._exc else self._raw)
     
     @property
     def exception(self):
@@ -218,14 +220,17 @@ class JQueryResponse(JavaScriptObject):
 class S(JavaScriptObject, JavaScriptExecutor):
     """A wrapper of the `jquery` (`$`) function"""
     
-    def __init__(self, jsexec: JavaScriptExecutor, **invopts):
+    def __init__(self, jsexec: JSExecType, **invopts):
         super().__init__("$", jsexec, **{**invopts, InvokeOption.strobj: False})
     
     def __call__(self, jquery: str):
         return self.query(jquery)
     
     def __repr__(self):
-        return f"""jquery function [{S.__name__}]<$>"""
+        return f"""jquery function ($) wrapper:{{{self._jsexec}}}"""
+    
+    def __str__(self):
+        return "$"
     
     def execute_script(self, script, *args):
         try:

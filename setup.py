@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
     
 setup(
     name="selenium_js2py",
-    version="0.3.2",
+    version="0.3.3",
     packages=find_packages(),
     url="https://github.com/junk-io/selenium-js2py",
     author="junki",
